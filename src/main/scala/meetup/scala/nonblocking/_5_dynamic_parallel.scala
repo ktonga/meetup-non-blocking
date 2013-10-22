@@ -18,24 +18,26 @@ trait WaitStrategies {
 
 
   private def checkPartialResults(prfs: PRFs)(isComplete: PRs => Boolean): Future[PRs] = {
-    recursiveCheckPartialResults(Nil, prfs, isComplete)
+
+    def rec(partial: PRs, remaining: PRFs): Future[PRs] = {
+      if (remaining.isEmpty)
+        Future.failed(new IllegalStateException("All providers have finished but result is not complete"))
+      else
+        Future.firstCompletedOf(remaining.map(_._2)) flatMap {
+          pr =>
+            val newPartial = partial :+ pr
+            val newRemaining = remaining.filter(_._1 != pr.name)
+            if (isComplete(newPartial))
+              Future.successful(newPartial ++ newRemaining.map(r =>
+                ProviderResult(r._1, Canceled, 0, "Canceled: Result completed before it finishes")))
+            else
+              rec(newPartial, newRemaining)
+        }
+    }
+
+    rec(Nil, prfs)
   }
 
-  private def recursiveCheckPartialResults(partial: PRs, remaining: PRFs, isComplete: PRs => Boolean): Future[PRs] = {
-    if (remaining.isEmpty)
-      Future.failed(new IllegalStateException("All providers have finished but result is not complete"))
-    else
-      Future.firstCompletedOf(remaining.map(_._2)) flatMap {
-        pr =>
-          val newPartial = partial :+ pr
-          val newRemaining = remaining.filter(_._1 != pr.name)
-          if (isComplete(newPartial))
-            Future.successful(newPartial ++ newRemaining.map(r =>
-              ProviderResult(r._1, Canceled, 0, "Canceled: Result completed before it finishes")))
-          else
-            recursiveCheckPartialResults(newPartial, newRemaining, isComplete)
-      }
-  }
 
 }
 
